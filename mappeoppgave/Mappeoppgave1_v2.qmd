@@ -1,0 +1,586 @@
+---
+title: "Mappeoppgave1_v2"
+format: pdf
+editor: visual
+echo: false
+warning : false
+---
+
+### Oppgave 1
+
+Lag to til fire figurer som sammenligninger sysselsetting, produksjon, bruttoprodukt, og bruttoprodukt per sysselsatt på tvers av næringer i 2021. Sysselsetting oppgis i antall årsverk, produksjon, bruttoprodukt, og bruttoprodukt per sysselsatt i løpende priser. Dere må selv avgjøre hvilke tall som er meningsfylte å sammenligne og hvorvidt dere ønsker å dele opp tallene i ulike figurer.
+
+```{r}
+#| warning: false
+rm(list = ls())
+suppressPackageStartupMessages({
+library(tidyverse)
+library(httr)
+library(rjstat)
+library(janitor)
+library(gdata)
+})
+```
+
+```{r}
+url <- "https://data.ssb.no/api/v0/no/table/09171/"
+
+query <- '{
+  "query": [
+    {
+      "code": "NACE",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "nr23_6",
+          "pub2X01_02",
+          "pub2X03",
+          "pub2X05",
+          "nr2X06_09",
+          "nr23ind",
+          "pub2X35",
+          "pub2X36_39",
+          "pub2X41_43",
+          "pub2X45_47",
+          "pub2X49B",
+          "pub2X50A",
+          "pub2X49A_52",
+          "pub2X53",
+          "pub2X55_56",
+          "pub2X58_63",
+          "pub2X64_66",
+          "pub2X68A",
+          "pub2X68B",
+          "pub2X69_75",
+          "pub2X77_82",
+          "pub2X84",
+          "pub2X85",
+          "pub2X86_88",
+          "pub2X90_97",
+          "nr23_6fn",
+          "nr23mark",
+          "nrimark"
+        ]
+      }
+    },
+    {
+      "code": "ContentsCode",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "Prob",
+          "BNPB"
+        ]
+      }
+    }
+  ],
+  "response": {
+    "format": "json-stat2"
+  }
+}'
+  
+tabell.tmp <- url %>%
+  POST(body = query, encode = "json")
+
+df <- tabell.tmp %>%
+  content("text") %>%
+  fromJSONstat() %>%
+  as_tibble()  
+```
+
+```{r}
+#| warning: false
+df <- df %>% 
+  separate(kvartal,c("År","Kvartal"),"K") %>% 
+  select(-Kvartal) %>% 
+  filter(År==2021) 
+
+dfprod <- df %>% 
+  filter(statistikkvariabel == "Produksjon i basisverdi. Løpende priser (mill. kr)" ) %>% 
+  group_by(næring) %>% 
+  summarise(produksjon = sum(value))
+
+dfbruttoprod <- df %>% 
+  filter(statistikkvariabel == "Bruttoprodukt i basisverdi. Løpende priser (mill. kr)" ) %>% 
+  group_by(næring) %>% 
+  summarise(bruttoprodukt = sum(value)) %>% 
+  select(-næring)
+
+df_tidy <- cbind(dfprod,dfbruttoprod)
+```
+
+```{r}
+url2 <- "https://data.ssb.no/api/v0/no/table/09789"
+
+query <- '{
+  "query": [
+    {
+      "code": "NACE2007",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "00-99",
+          "01-02",
+          "03",
+          "05-09",
+          "10-33",
+          "35-39",
+          "41-43",
+          "45-47",
+          "49-53",
+          "55-56",
+          "58-63",
+          "64-66",
+          "68-82",
+          "84",
+          "85",
+          "86-88",
+          "90-99"
+        ]
+      }
+    },
+    {
+      "code": "Tid",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "2021"
+        ]
+      }
+    }
+  ],
+  "response": {
+    "format": "json-stat2"
+  }
+}'
+
+tabell2.tmp <- url2 %>%
+  POST(body = query, encode = "json")
+
+df2 <- tabell2.tmp %>%
+  content("text") %>%
+  fromJSONstat() %>%
+  as_tibble()  
+```
+
+```{r}
+df_fig <- df_tidy %>% 
+  filter(næring == "Offentlig administrasjon og forsvar" 
+         | næring == "Industri" 
+         | næring == "Bygge- og anleggsvirksomhet" 
+         | næring == "Helse- og omsorgstjenester" 
+         | næring == "Utvinning av råolje og naturgass, inkl. tjenester" 
+         | næring == "Varehandel og reparasjon av motorvogner") %>% 
+  mutate(bruttoprodukt = bruttoprodukt*0.001) %>% 
+  mutate(produksjon = produksjon*0.001)
+
+df_fig %>% 
+  ggplot(aes(x=næring, group = 1)) + theme_minimal() + theme(axis.text.x = element_text(angle = 60,hjust = 1, size = 6.5)) + ylab("Milliarder kr") + xlab("Figur 1.1") + 
+  
+  geom_col(aes(y=bruttoprodukt)) +
+  
+  geom_point(aes(y=produksjon, col ="Produksjon")) +
+  geom_line(aes(y=produksjon, col ="Produksjon")) + ggtitle("Bruttoprodukt og produksjon i de seks største næringene" , subtitle = "- (2021) løpende priser")
+  
+
+```
+
+```{r}
+df2 <- df2 %>% 
+  rename(næring = "næring (SN2007)") %>% 
+  rename(sysselsetting = "value") %>% 
+  mutate(prosent = sysselsetting/2774*100)
+```
+
+```{r}
+df2 %>% 
+  filter(næring != "Alle næringer") %>% 
+  ggplot(aes(y=næring, x= prosent)) + theme_bw() + geom_col() + theme(axis.text.x = element_text(angle = 40,hjust = 1)) + ggtitle("Sysselsetting etter næring (2021)", subtitle = "- Årsverk i prosent") + ylab("")
+```
+
+### Oppgave 2
+
+Diskuter hvorvidt bruttoprodukt per sysselsatt er et godt mål på produktivitet i offentlig sektor.
+
+### Oppgave 3
+
+Lag figurer som viser bruttoprodukt per næring i både faste og løpende priser mellom 2011 og 2021. Diskuter hvorvidt det er noen næringer hvor variasjon i produktprisene har særlig stor innvirkning på verdien av bruttoproduksjonen.
+
+```{r}
+url3 <- "https://data.ssb.no/api/v0/no/table/09171"
+
+query <- '{
+  "query": [
+    {
+      "code": "NACE",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "pub2X01_02",
+          "pub2X03",
+          "pub2X05",
+          "nr2X06_09",
+          "nr23ind",
+          "pub2X35",
+          "pub2X36_39",
+          "pub2X41_43",
+          "pub2X45_47",
+          "pub2X49B",
+          "pub2X50A",
+          "pub2X49A_52",
+          "pub2X53",
+          "pub2X55_56",
+          "pub2X58_63",
+          "pub2X64_66",
+          "pub2X68A",
+          "pub2X68B",
+          "pub2X69_75",
+          "pub2X77_82",
+          "pub2X84",
+          "pub2X85",
+          "pub2X86_88",
+          "pub2X90_97"
+        ]
+      }
+    },
+    {
+      "code": "ContentsCode",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "BNPB",
+          "BNPB2"
+        ]
+      }
+    },
+    {
+      "code": "Tid",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "2011K1",
+          "2011K2",
+          "2011K3",
+          "2011K4",
+          "2012K1",
+          "2012K2",
+          "2012K3",
+          "2012K4",
+          "2013K1",
+          "2013K2",
+          "2013K3",
+          "2013K4",
+          "2014K1",
+          "2014K2",
+          "2014K3",
+          "2014K4",
+          "2015K1",
+          "2015K2",
+          "2015K3",
+          "2015K4",
+          "2016K1",
+          "2016K2",
+          "2016K3",
+          "2016K4",
+          "2017K1",
+          "2017K2",
+          "2017K3",
+          "2017K4",
+          "2018K1",
+          "2018K2",
+          "2018K3",
+          "2018K4",
+          "2019K1",
+          "2019K2",
+          "2019K3",
+          "2019K4",
+          "2020K1",
+          "2020K2",
+          "2020K3",
+          "2020K4",
+          "2021K1",
+          "2021K2",
+          "2021K3",
+          "2021K4"
+        ]
+      }
+    }
+  ],
+  "response": {
+    "format": "json-stat2"
+  }
+}'
+
+tabell3.tmp <- url %>%
+  POST(body = query, encode = "json")
+
+df3 <- tabell3.tmp %>%
+  content("text") %>%
+  fromJSONstat() %>%
+  as_tibble()  
+```
+
+```{r}
+df3 <- df3 %>% 
+  separate(kvartal,c("År","Kvartal"),"K") %>% 
+  select(-Kvartal)
+```
+
+```{r}
+#| warning: false
+dfbruttoprod_lop <- df3 %>% 
+  filter(statistikkvariabel == "Bruttoprodukt i basisverdi. Løpende priser (mill. kr)" ) %>% 
+  group_by(næring, År) %>% 
+  mutate(bruttoproduksjon  = sum(value)) %>% 
+  select(-value) %>% 
+  distinct()
+
+dfbruttoprod_lop <- dfbruttoprod_lop %>% 
+  filter(næring == "Offentlig administrasjon og forsvar" 
+         | næring == "Industri" 
+         | næring == "Bygge- og anleggsvirksomhet" 
+         | næring == "Helse- og omsorgstjenester" 
+         | næring == "Utvinning av råolje og naturgass, inkl. tjenester" 
+         | næring == "Varehandel og reparasjon av motorvogner") %>% 
+  mutate(År = as.numeric(År)) %>% 
+  mutate(bruttoproduksjon = log(bruttoproduksjon))
+```
+
+```{r}
+dfbruttoprod_fast <- df3 %>% 
+  filter(statistikkvariabel == "Bruttoprodukt i basisverdi. Faste 2020-priser (mill. kr)" ) %>% 
+  group_by(næring, År) %>% 
+  mutate(bruttoproduksjon_reel  = sum(value)) %>% 
+  select(-value) %>% 
+  distinct()
+
+dfbruttoprod_fast <- dfbruttoprod_fast %>% 
+  filter(næring == "Offentlig administrasjon og forsvar" 
+         | næring == "Industri" 
+         | næring == "Bygge- og anleggsvirksomhet" 
+         | næring == "Helse- og omsorgstjenester" 
+         | næring == "Utvinning av råolje og naturgass, inkl. tjenester" 
+         | næring == "Varehandel og reparasjon av motorvogner") %>% 
+  mutate(År = as.numeric(År)) %>% 
+  mutate(bruttoproduksjon_reel = log(bruttoproduksjon_reel))
+```
+
+```{r}
+ggplot() + 
+  geom_line(data = dfbruttoprod_fast, aes(År, bruttoproduksjon_reel, col = "Faste priser (2020)")) + ylab("log") + xlab("Figur 3.1") +
+  geom_line(data = dfbruttoprod_lop, aes(År, bruttoproduksjon, col = "Løpende priser")) +  facet_wrap(~ næring) + theme_bw() + theme(axis.text.x = element_text(angle = 40,hjust = 1)) + ggtitle("Bruttoproduksjon i løpende og faste priser", subtitle = "- log verdi (2011-2021)") 
+```
+
+Figur 3 viser bruttoproduksjon i de seks største næringene, målt i faste (2020 priser) og løpende priser. Jeg har valgt å skalere slik at produksjon vises i en logaritmisk skala.
+
+I mange tilfeller vil det være interessant å se hvor mye ulike næringer har økt sin produksjon, noe som ikke nødvendigvis er en enkel øvelse, både fordi det er store forskjeller i prisutvikling på ulike produkter, og fordi det er ofte er vanskelig å måle prisutviklingen på produktene (Holden, 2021, s. 62). Studier av prisatferd viser at de flest produktpriser ligger konstant i lang tid, ofte helt helt år. Dette stemmer nødvendigvis ikke bestandig, og særlig når det kommer til produkter basert på naturressurser. Treghet i tilpasning gjør at det er vanskelig å skru opp produksjonen ved økt etterspørsel, det er også få substitusjonsmuligeter på etterspørselsiden og dette kan føre til store endringer i pris.
+
+I figur 3.1 ser vi at olje og gass næringen skiller seg ut i løpende priser, der produksjon målt i faste priser er på et mye lavere nivå. I figur 3.2 er denne figuren forstørret.
+
+```{r}
+olje_gass <- dfbruttoprod_fast %>% 
+  filter(næring == "Utvinning av råolje og naturgass, inkl. tjenester")
+
+olje_gass2 <- dfbruttoprod_lop %>% 
+    filter(næring == "Utvinning av råolje og naturgass, inkl. tjenester")
+
+ggplot() + 
+  geom_line(data = olje_gass, aes(x=År,y=bruttoproduksjon_reel , col = "Faste priser (2020)")) +
+  geom_line(data = olje_gass2, aes(x=År,y =bruttoproduksjon, col = "Løpende priser")) + ylab("log")  + theme_minimal() + ggtitle("Utvinning av råolje og naturgass, inkl. tjenester", subtitle = "- Bruttoproduksjon i faste og løpende priser") + xlab("Figur 3.2")
+```
+
+Produktprisene har altså hatt en særlig stor innvirkning på bruttoproduksjon av olje og gass. Råvareprisene er det sentrale her. Økning i bruttoproduksjon vil kunne komme av en økning i produksjon og en økning i pris. Helt enkelt kan vi si at dersom råvareprisene øker mens produksjonen er den samme vil vi likevel se en økning i produksjon målt i løpende priser.
+
+```{r}
+
+url4 <- "https://data.ssb.no/api/v0/no/table/12462"
+
+query <- '{
+  "query": [
+    {
+      "code": "Marked",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "00"
+        ]
+      }
+    },
+    {
+      "code": "NaringUtenriks",
+      "selection": {
+        "filter": "vs:NaringPPI1",
+        "values": [
+          "SNN06_TOT",
+          "SNN10_33"
+        ]
+      }
+    },
+    {
+      "code": "ContentsCode",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "Indeksnivo",
+          "Manedsendring"
+        ]
+      }
+    },
+    {
+      "code": "Tid",
+      "selection": {
+        "filter": "item",
+        "values": [
+          "2011M01",
+          "2011M02",
+          "2011M03",
+          "2011M04",
+          "2011M05",
+          "2011M06",
+          "2011M07",
+          "2011M08",
+          "2011M09",
+          "2011M10",
+          "2011M11",
+          "2011M12",
+          "2012M01",
+          "2012M02",
+          "2012M03",
+          "2012M04",
+          "2012M05",
+          "2012M06",
+          "2012M07",
+          "2012M08",
+          "2012M09",
+          "2012M10",
+          "2012M11",
+          "2012M12",
+          "2013M01",
+          "2013M02",
+          "2013M03",
+          "2013M04",
+          "2013M05",
+          "2013M06",
+          "2013M07",
+          "2013M08",
+          "2013M09",
+          "2013M10",
+          "2013M11",
+          "2013M12",
+          "2014M01",
+          "2014M02",
+          "2014M03",
+          "2014M04",
+          "2014M05",
+          "2014M06",
+          "2014M07",
+          "2014M08",
+          "2014M09",
+          "2014M10",
+          "2014M11",
+          "2014M12",
+          "2015M01",
+          "2015M02",
+          "2015M03",
+          "2015M04",
+          "2015M05",
+          "2015M06",
+          "2015M07",
+          "2015M08",
+          "2015M09",
+          "2015M10",
+          "2015M11",
+          "2015M12",
+          "2016M01",
+          "2016M02",
+          "2016M03",
+          "2016M04",
+          "2016M05",
+          "2016M06",
+          "2016M07",
+          "2016M08",
+          "2016M09",
+          "2016M10",
+          "2016M11",
+          "2016M12",
+          "2017M01",
+          "2017M02",
+          "2017M03",
+          "2017M04",
+          "2017M05",
+          "2017M06",
+          "2017M07",
+          "2017M08",
+          "2017M09",
+          "2017M10",
+          "2017M11",
+          "2017M12",
+          "2018M01",
+          "2018M02",
+          "2018M03",
+          "2018M04",
+          "2018M05",
+          "2018M06",
+          "2018M07",
+          "2018M08",
+          "2018M09",
+          "2018M10",
+          "2018M11",
+          "2018M12",
+          "2019M01",
+          "2019M02",
+          "2019M03",
+          "2019M04",
+          "2019M05",
+          "2019M06",
+          "2019M07",
+          "2019M08",
+          "2019M09",
+          "2019M10",
+          "2019M11",
+          "2019M12",
+          "2020M01",
+          "2020M02",
+          "2020M03",
+          "2020M04",
+          "2020M05",
+          "2020M06",
+          "2020M07",
+          "2020M08",
+          "2020M09",
+          "2020M10",
+          "2020M11",
+          "2020M12",
+          "2021M01",
+          "2021M02",
+          "2021M03",
+          "2021M04",
+          "2021M05",
+          "2021M06",
+          "2021M07",
+          "2021M08",
+          "2021M09",
+          "2021M10",
+          "2021M11",
+          "2021M12"
+        ]
+      }
+    }
+  ],
+  "response": {
+    "format": "json-stat2"
+  }
+}'
+
+tabell4.tmp <- url3 %>%
+  POST(body = query, encode = "json")
+
+df4 <- tabell4.tmp %>%
+  content("text") %>%
+  fromJSONstat() %>%
+  as_tibble()
+```
+
+### Oppgave 4
+
+I norsk sammenheng skiller vi ofte mellom brutto nasjonal produkt (BNP) og brutto nasjonalprodukt på fastlandet (FN-BNP). Hvilke næringer er unntatt fra FN-BNP, og hvorfor gjøres dette? Knytt gjerne besvarelsen til funnene fra oppgave 3.
